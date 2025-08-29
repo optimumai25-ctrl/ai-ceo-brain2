@@ -1,0 +1,7 @@
+chat_history.json
+last_refresh.txt
+.env
+downloaded_files/
+parsed_data/
+embeddings/
+__pycache__/
