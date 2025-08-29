@@ -22,3 +22,4 @@ def simple_chunks(text: str, max_chars: int = 3500, overlap: int = 300) -> List[
     if cur:
         chunks.append("\n\n".join(cur))
     return [{"chunk_id": i, "text": c} for i, c in enumerate(chunks)]
+
