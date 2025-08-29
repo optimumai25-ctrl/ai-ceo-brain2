@@ -8,9 +8,9 @@ import file_parser
 import embed_and_store
 from answer_with_rag import answer
 
-# ──────────────────────────────────
+# ────────────────────────────────────────
 # Login System
-# ──────────────────────────────────
+# ────────────────────────────────────────
 USERNAME = "admin123"
 PASSWORD = "BestOrg123@#"
 
@@ -36,46 +36,40 @@ if not st.session_state["authenticated"]:
     login()
     st.stop()
 
-# ──────────────────────────────────
-# Constants
-# ──────────────────────────────────
+# ────────────────────────────────────────
+# Constants & Setup
+# ────────────────────────────────────────
 HIST_PATH = Path("chat_history.json")
 REFRESH_PATH = Path("last_refresh.txt")
 UPLOAD_DIR = Path("docs")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# ──────────────────────────────────
+st.set_page_config(page_title="AI CEO Assistant", page_icon="🧠", layout="wide")
+
+# ────────────────────────────────────────
 # Helper Functions
-# ──────────────────────────────────
+# ────────────────────────────────────────
 def load_history():
-    if HIST_PATH.exists():
-        return json.loads(HIST_PATH.read_text(encoding="utf-8"))
-    return []
+    return json.loads(HIST_PATH.read_text(encoding="utf-8")) if HIST_PATH.exists() else []
 
 def save_history(history):
     HIST_PATH.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def reset_chat():
-    if HIST_PATH.exists():
-        HIST_PATH.unlink()
+    if HIST_PATH.exists(): HIST_PATH.unlink()
 
 def save_refresh_time():
     REFRESH_PATH.write_text(datetime.now().strftime('%b-%d-%Y %I:%M %p'))
 
 def load_refresh_time():
-    if REFRESH_PATH.exists():
-        return REFRESH_PATH.read_text()
-    return "Never"
+    return REFRESH_PATH.read_text() if REFRESH_PATH.exists() else "Never"
 
 def export_history_to_csv(history: list) -> bytes:
-    df = pd.DataFrame(history)
-    return df.to_csv(index=False).encode('utf-8')
+    return pd.DataFrame(history).to_csv(index=False).encode('utf-8')
 
-# ──────────────────────────────────
-# Page & Sidebar
-# ──────────────────────────────────
-st.set_page_config(page_title="AI CEO Assistant", page_icon="🧠", layout="wide")
-
+# ────────────────────────────────────────
+# Sidebar Navigation
+# ────────────────────────────────────────
 st.sidebar.title("🧠 AI CEO Panel")
 st.sidebar.markdown(f"👤 Logged in as: `{USERNAME}`")
 if st.sidebar.button("🔓 Logout"):
@@ -84,13 +78,13 @@ if st.sidebar.button("🔓 Logout"):
 
 mode = st.sidebar.radio("Navigation", ["💬 New Chat", "📜 View History", "🔁 Refresh Data"])
 
-# ──────────────────────────────────
-# Mode: Refresh Embeddings from Drive
-# ──────────────────────────────────
+# ────────────────────────────────────────
+# Mode: Refresh Data
+# ────────────────────────────────────────
 if mode == "🔁 Refresh Data":
     st.title("🔁 Refresh AI Knowledge Base")
     st.caption("This will re-parse documents and re-embed knowledge vectors.")
-    st.markdown(f"🧓 **Last Refreshed:** {load_refresh_time()}")
+    st.markdown(f"🦳 **Last Refreshed:** {load_refresh_time()}")
 
     if st.button("🚀 Run File Parser + Embedder"):
         with st.spinner("Refreshing knowledge base..."):
@@ -99,13 +93,13 @@ if mode == "🔁 Refresh Data":
                 embed_and_store.main()
                 save_refresh_time()
                 st.success("✅ Data refreshed and embedded successfully.")
-                st.markdown(f"🧓 **Last Refreshed:** {load_refresh_time()}")
+                st.markdown(f"🦳 **Last Refreshed:** {load_refresh_time()}")
             except Exception as e:
                 st.error(f"❌ Failed: {e}")
 
-# ──────────────────────────────────
-# Mode: View Chat History
-# ──────────────────────────────────
+# ────────────────────────────────────────
+# Mode: View History
+# ────────────────────────────────────────
 elif mode == "📜 View History":
     st.title("📜 Chat History")
     history = load_history()
@@ -130,13 +124,13 @@ elif mode == "📜 View History":
             reset_chat()
             st.success("History cleared.")
 
-# ──────────────────────────────────
-# Mode: New Chat Interface
-# ──────────────────────────────────
+# ────────────────────────────────────────
+# Mode: New Chat
+# ────────────────────────────────────────
 elif mode == "💬 New Chat":
     st.title("🧠 AI CEO Assistant")
     st.caption("Ask about meetings, projects, hiring, finances, and research. Answers cite your documents.")
-    st.markdown(f"🧓 **Last Refreshed:** {load_refresh_time()}")
+    st.markdown(f"🦳 **Last Refreshed:** {load_refresh_time()}")
 
     history = load_history()
 
@@ -147,11 +141,7 @@ elif mode == "💬 New Chat":
     user_msg = st.chat_input("Type your question…")
     if user_msg:
         now = datetime.now().strftime('%b-%d-%Y %I:%M%p')
-        history.append({
-            "role": "user",
-            "content": user_msg,
-            "timestamp": now
-        })
+        history.append({"role": "user", "content": user_msg, "timestamp": now})
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
@@ -161,10 +151,5 @@ elif mode == "💬 New Chat":
                     reply = f"Error: {e}"
             st.markdown(f"**[{datetime.now().strftime('%b-%d-%Y %I:%M%p')}]**  \n{reply}")
 
-        history.append({
-            "role": "assistant",
-            "content": reply,
-            "timestamp": datetime.now().strftime('%b-%d-%Y %I:%M%p')
-        })
-
+        history.append({"role": "assistant", "content": reply, "timestamp": datetime.now().strftime('%b-%d-%Y %I:%M%p')})
         save_history(history)
