@@ -1,4 +1,3 @@
-# onedrive_reader.py
 import os
 import requests
 from pathlib import Path
@@ -9,10 +8,23 @@ DOWNLOAD_DIR = "downloaded_files"
 SCOPES = ["https://graph.microsoft.com/.default"]
 
 def _get_secret(name: str, default: str = "") -> str:
+    """
+    Robust secret getter:
+    - reads st.secrets[name] if present
+    - falls back to os.environ[name]
+    - trims whitespace and surrounding quotes
+    - also tries lowercase key variant
+    """
     try:
-        return (st.secrets.get(name) if hasattr(st, "secrets") else None) or os.getenv(name, default)
+        val = (st.secrets.get(name) if hasattr(st, "secrets") else None) or \
+              (st.secrets.get(name.lower()) if hasattr(st, "secrets") else None)  # type: ignore[attr-defined]
     except Exception:
-        return os.getenv(name, default)
+        val = None
+    if not val:
+        val = os.getenv(name) or os.getenv(name.lower(), default)
+    if isinstance(val, str):
+        val = val.strip().strip('"').strip("'")
+    return val or default
 
 def _secrets():
     client_id = _get_secret("MS_CLIENT_ID")
