@@ -1,4 +1,3 @@
-# answer_with_rag.py
 import os
 import pickle
 from typing import List
@@ -38,33 +37,38 @@ def answer(question: str, k: int = 5, chat_history: List[dict] = []) -> str:
     query_vec = get_embedding(question)
     query_vec = np.array([query_vec], dtype=np.float32)
 
+    # Top-k similarity search
     D, I = index.search(query_vec, k)
     top_k = [
         metadata[i] for i, dist in zip(I[0], D[0])
         if i in metadata and dist < SIMILARITY_THRESHOLD
     ]
 
+    # Format context from matching documents
     context_text = "\n\n".join(
         f"{item['text_preview']}"
         for item in top_k
     )
 
+    # Include previous chat if needed
     history_text = "\n".join(
         f"{h['role'].capitalize()}: {h['content']}"
         for h in chat_history if h['role'] in ("user", "assistant")
     )
 
+    # Final prompt for GPT
     prompt = f"""
-You are an executive assistant AI that answers based strictly on company documents.
-Do not guess or hallucinate. If the answer isn't in the documents, say \"Not found in documents.\"
+You are an executive assistant AI that answers based on company documents.
+Do not hallucinate or guess. If the answer isn't in the documents, say: "Not found in documents."
 
 [Context from Documents]
 {context_text}
 
-[Question]
+[User Question]
 {question}
 """.strip()
 
+    # Call GPT
     completion = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
@@ -75,3 +79,4 @@ Do not guess or hallucinate. If the answer isn't in the documents, say \"Not fou
     )
 
     return completion["choices"][0]["message"]["content"]
+
