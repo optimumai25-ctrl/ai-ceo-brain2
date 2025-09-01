@@ -1,3 +1,4 @@
+# answer_with_rag.py
 import os
 import pickle
 from typing import List
@@ -18,9 +19,9 @@ METADATA_PATH = Path("embeddings/metadata.pkl")
 # Constants
 EMBED_MODEL = "text-embedding-3-small"
 EMBED_DIM = 1536
-SIMILARITY_THRESHOLD = 0.70
+SIMILARITY_THRESHOLD = 0.70  # Distance threshold for relevance filtering
 
-# Load index and metadata
+# Load index + metadata
 index = faiss.read_index(str(EMBEDDING_PATH))
 with open(METADATA_PATH, "rb") as f:
     metadata = pickle.load(f)
@@ -48,9 +49,14 @@ def answer(question: str, k: int = 5, chat_history: List[dict] = []) -> str:
         for item in top_k
     )
 
+    history_text = "\n".join(
+        f"{h['role'].capitalize()}: {h['content']}"
+        for h in chat_history if h['role'] in ("user", "assistant")
+    )
+
     prompt = f"""
 You are an executive assistant AI that answers based strictly on company documents.
-Do not guess or hallucinate. If the answer isn't in the documents, say "Not found in documents."
+Do not guess or hallucinate. If the answer isn't in the documents, say \"Not found in documents.\"
 
 [Context from Documents]
 {context_text}
@@ -69,5 +75,3 @@ Do not guess or hallucinate. If the answer isn't in the documents, say "Not foun
     )
 
     return completion["choices"][0]["message"]["content"]
-
-
