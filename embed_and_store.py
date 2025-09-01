@@ -1,4 +1,3 @@
-# embed_and_store.py
 import os
 import time
 import pickle
@@ -17,10 +16,15 @@ import openai
 # -------- Secret helpers (lazy, fault-tolerant) --------
 def _get_secret(name: str, default: str = "") -> str:
     try:
-        # st.secrets may not exist during certain import flows
-        return (st.secrets.get(name) if hasattr(st, "secrets") else None) or os.getenv(name, default)
+        val = (st.secrets.get(name) if hasattr(st, "secrets") else None) or \
+              (st.secrets.get(name.lower()) if hasattr(st, "secrets") else None)  # type: ignore[attr-defined]
     except Exception:
-        return os.getenv(name, default)
+        val = None
+    if not val:
+        val = os.getenv(name) or os.getenv(name.lower(), default)
+    if isinstance(val, str):
+        val = val.strip().strip('"').strip("'")
+    return val or default
 
 def _ensure_openai_key():
     if not getattr(openai, "api_key", None):
@@ -113,3 +117,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
