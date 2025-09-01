@@ -1,22 +1,19 @@
-import os
+# embed_and_store.py
 import time
 import pickle
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, Optional
 
 import numpy as np
 import faiss
-from dotenv import load_dotenv
 from tqdm import tqdm
 
 from chunk_utils import simple_chunks
 
-# -------- Load OpenAI API Key from .env --------
-import openai
-load_dotenv()  # ✅ Load variables from .env
 import streamlit as st
 import openai
 
+# -------- Secrets / Keys --------
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # -------- Paths & Config --------
@@ -29,26 +26,28 @@ EMBED_DIM = 1536
 INDEX_PATH = EMBED_DIR / "faiss.index"
 META_PATH = EMBED_DIR / "metadata.pkl"
 
-# FAISS index
-base_index = faiss.IndexFlatL2(EMBED_DIM)
+# Cosine similarity via inner product: normalize embeddings and use IndexFlatIP
+base_index = faiss.IndexFlatIP(EMBED_DIM)
 index = faiss.IndexIDMap2(base_index)
 
 metadata: Dict[int, Dict] = {}
 next_id = 0
 
+def _normalize(vec: np.ndarray) -> np.ndarray:
+    n = np.linalg.norm(vec)
+    if n == 0:
+        return vec
+    return vec / n
+
 # -------- Embedding --------
 def get_embedding(text: str) -> Optional[np.ndarray]:
     for attempt in range(4):
         try:
-            response = openai.Embedding.create(
-                model=EMBED_MODEL,
-                input=text
-            )
-            vec = response["data"][0]["embedding"]
-            arr = np.array(vec, dtype=np.float32)
-            if arr.shape != (EMBED_DIM,):
-                raise ValueError(f"Unexpected embedding shape {arr.shape}")
-            return arr
+            response = openai.Embedding.create(model=EMBED_MODEL, input=text)
+            vec = np.asarray(response["data"][0]["embedding"], dtype=np.float32)
+            if vec.shape != (EMBED_DIM,):
+                raise ValueError(f"Unexpected embedding shape {vec.shape}")
+            return _normalize(vec)
         except Exception as e:
             wait = 1.5 ** attempt
             print(f"Embedding error (attempt {attempt + 1}): {e}. Retrying in {wait:.1f}s...")
@@ -66,7 +65,7 @@ def main():
         print(f"Missing folder: {PARSED_DIR.resolve()}")
         return
 
-    files = sorted([p for p in PARSED_DIR.iterdir() if p.is_file() and p.suffix.lower() == ".txt"])
+    files = sorted([p for p in PARSED_DIR.rglob("*.txt") if p.is_file()])
     if not files:
         print("No .txt files found in parsed_data.")
         return
