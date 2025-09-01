@@ -87,48 +87,40 @@ if st.sidebar.button("Logout"):
 mode = st.sidebar.radio("Navigation", ["💬 New Chat", "📜 View History", "🔁 Refresh Data"])
 
 # ────────────────────────────────────────
-# Mode: Refresh Data
+# Mode: Refresh Data (Single Button Flow)
 # ────────────────────────────────────────
 if mode == "🔁 Refresh Data":
     st.title("Refresh AI Knowledge Base")
     st.caption("Sync files, parse documents, and rebuild embeddings.")
     st.markdown(f"**Last Refreshed:** {load_refresh_time()}")
 
-    col1, col2, col3 = st.columns(3)
+    run_all = st.button("🚀 Run Full Refresh (Sync → Parse → Embed)")
 
-    with col1:
-        if st.button("1) Sync OneDrive → downloaded_files/"):
-            with st.spinner("Syncing from OneDrive..."):
-                try:
-                    sync_onedrive_folder()
-                    st.success("OneDrive sync complete.")
-                except Exception as e:
-                    st.error(f"Failed to sync: {e}")
+    if run_all:
+        try:
+            with st.spinner("Step 1/3: Syncing OneDrive → downloaded_files/..."):
+                sync_onedrive_folder()
+            st.success("Step 1/3 complete: OneDrive sync finished.")
 
-    with col2:
-        if st.button("2) Parse downloaded_files → parsed_data"):
-            with st.spinner("Parsing documents..."):
-                try:
-                    file_parser.main()
-                    st.success("Parsing complete.")
-                except Exception as e:
-                    st.error(f"Parsing failed: {e}")
+            with st.spinner("Step 2/3: Parsing downloaded_files → parsed_data..."):
+                file_parser.main()
+            st.success("Step 2/3 complete: Parsing finished.")
 
-    with col3:
-        if st.button("3) Build embeddings from parsed_data"):
-            with st.spinner("Embedding and indexing..."):
-                try:
-                    embed_and_store.main()
-                    save_refresh_time()
-                    st.success("Embeddings built.")
-                    st.markdown(f"**Last Refreshed:** {load_refresh_time()}")
-                except Exception as e:
-                    st.error(f"Embedding failed: {e}")
+            with st.spinner("Step 3/3: Building embeddings from parsed_data → embeddings/..."):
+                embed_and_store.main()
+            st.success("Step 3/3 complete: Embeddings built.")
+
+            save_refresh_time()
+            st.balloons()
+            st.info(f"Full refresh completed. **Last Refreshed:** {load_refresh_time()}")
+
+        except Exception as e:
+            st.error(f"Full refresh failed: {e}")
 
     if embeddings_exist():
         st.info("Embeddings detected.")
     else:
-        st.warning("Embeddings not found. Run steps 1 → 3 in order.")
+        st.warning("Embeddings not found. Click the button above to run the full refresh.")
 
 # ────────────────────────────────────────
 # Mode: View History
@@ -167,7 +159,7 @@ elif mode == "💬 New Chat":
     st.markdown(f"**Last Refreshed:** {load_refresh_time()}")
 
     if not embeddings_exist():
-        st.warning("Embeddings not found. Go to 'Refresh Data' and run steps 1 → 3.")
+        st.warning("Embeddings not found. Go to 'Refresh Data' and run the Full Refresh.")
     history = load_history()
 
     for turn in history:
