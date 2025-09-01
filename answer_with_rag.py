@@ -3,14 +3,26 @@ from pathlib import Path
 from typing import List, Tuple
 import pickle
 import re
+import os
 
 import faiss
 import numpy as np
 import openai
 import streamlit as st
 
-# Streamlit Secrets
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# -------- Secret helpers --------
+def _get_secret(name: str, default: str = "") -> str:
+    try:
+        return (st.secrets.get(name) if hasattr(st, "secrets") else None) or os.getenv(name, default)
+    except Exception:
+        return os.getenv(name, default)
+
+def _ensure_openai_key():
+    if not getattr(openai, "api_key", None):
+        key = _get_secret("OPENAI_API_KEY")
+        if not key:
+            raise KeyError("OPENAI_API_KEY is not set in Streamlit Secrets or environment.")
+        openai.api_key = key
 
 # Paths
 EMBEDDING_PATH = Path("embeddings/faiss.index")
@@ -20,10 +32,8 @@ PARSED_DIR = Path("parsed_data")
 # Constants
 EMBED_MODEL = "text-embedding-3-small"
 EMBED_DIM = 1536
-# Adaptive cosine/IP thresholds on normalized vectors
 ADAPTIVE_THRESHOLDS = [0.30, 0.22, 0.15, 0.10, 0.06]
 
-# -------- Utils --------
 def _normalize(vec: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(vec)
     return vec if n == 0 else (vec / n)
@@ -43,6 +53,7 @@ def _load_index_and_meta(_idx_mtime: int, _meta_mtime: int):
     return idx, meta
 
 def _get_embedding(text: str) -> np.ndarray:
+    _ensure_openai_key()
     r = openai.Embedding.create(model=EMBED_MODEL, input=text)
     v = np.asarray(r["data"][0]["embedding"], dtype=np.float32)
     return _normalize(v)
@@ -59,7 +70,6 @@ def _split_paragraphs(txt: str) -> List[str]:
     return paras
 
 def _keyword_fuzzy_score(paragraph: str, tokens: List[str]) -> float:
-    # Very light heuristic score: term hits + partials
     p = paragraph.lower()
     score = 0.0
     for t in tokens:
@@ -69,21 +79,13 @@ def _keyword_fuzzy_score(paragraph: str, tokens: List[str]) -> float:
         if tl in p:
             score += 1.0
         else:
-            # partial match heuristic
-            if len(tl) >= 4:
-                if any(tl[:m] in p for m in (4, 5)):
-                    score += 0.4
+            if len(tl) >= 4 and any(tl[:m] in p for m in (4, 5)):
+                score += 0.4
     return score
 
 def _keyword_sweep(question: str, max_paras: int = 12) -> List[str]:
-    """
-    Grep-style pass over parsed_data to find best paragraphs when vectors miss.
-    Returns top paragraphs concatenated later.
-    """
     if not PARSED_DIR.exists():
         return []
-
-    # Basic tokenization: words >= 3 chars
     tokens = [w for w in re.findall(r"[A-Za-z0-9_]+", question) if len(w) >= 3]
 
     hits = []
@@ -99,13 +101,10 @@ def _keyword_sweep(question: str, max_paras: int = 12) -> List[str]:
 
     if not hits:
         return []
-
-    # Sort by score descending, keep top N distinct paragraphs
     hits.sort(key=lambda x: x[0], reverse=True)
-    dedup = []
-    seen = set()
+    dedup, seen = [], set()
     for s, para in hits:
-        key = para[:160]  # crude dedup by prefix
+        key = para[:160]
         if key in seen:
             continue
         seen.add(key)
@@ -114,13 +113,7 @@ def _keyword_sweep(question: str, max_paras: int = 12) -> List[str]:
             break
     return dedup
 
-# -------- Public API --------
 def answer(question: str, k: int = 7, chat_history: List[dict] = [], strict_mode: bool = False) -> str:
-    """
-    strict_mode=False => enable keyword sweep + general-knowledge fallback.
-    strict_mode=True  => vector-only; return 'Not found in documents.' if no hits.
-    """
-    # 1) Vector search (adaptive thresholds)
     idx_mtime, meta_mtime = _file_mtimes()
     index, metadata = _load_index_and_meta(idx_mtime, meta_mtime)
 
@@ -128,7 +121,6 @@ def answer(question: str, k: int = 7, chat_history: List[dict] = [], strict_mode
     if index is not None and metadata:
         qv = _get_embedding(question).reshape(1, -1)
         D, I = _search(index, qv, k)
-
         chosen = []
         for thr in ADAPTIVE_THRESHOLDS:
             tmp = []
@@ -140,17 +132,14 @@ def answer(question: str, k: int = 7, chat_history: List[dict] = [], strict_mode
             if tmp:
                 chosen = tmp
                 break
-
         if chosen:
             chosen.sort(key=lambda x: x[1], reverse=True)
             vector_context_chunks = [metadata[i].get("text_preview", "") for i, _ in chosen]
 
-    # 2) If no vector hits and not strict, do keyword/fuzzy sweep
     keyword_context_chunks: List[str] = []
     if not vector_context_chunks and not strict_mode:
         keyword_context_chunks = _keyword_sweep(question, max_paras=12)
 
-    # 3) Build prompt paths
     if vector_context_chunks or keyword_context_chunks:
         context_text = "\n\n".join(vector_context_chunks + keyword_context_chunks)
         prompt = f"""
@@ -166,7 +155,6 @@ If the answer is not supported by the context, reply exactly: "Not found in docu
     else:
         if strict_mode:
             return "Not found in documents."
-        # General-knowledge fallback with explicit assumptions
         prompt = f"""
 You are an executive assistant AI. The user asked a question but there were no matching internal documents.
 Provide a practical, structured answer using standard business knowledge and clearly label all assumptions.
@@ -181,6 +169,7 @@ Add a final note: "No matching internal documents were found; the above includes
 {question}
 """.strip()
 
+    _ensure_openai_key()
     completion = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
@@ -189,5 +178,4 @@ Add a final note: "No matching internal documents were found; the above includes
         ],
         temperature=0.2,
     )
-
     return completion["choices"][0]["message"]["content"]
