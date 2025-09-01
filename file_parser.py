@@ -1,4 +1,3 @@
-# file_parser.py
 import os
 from pathlib import Path
 from docx import Document
