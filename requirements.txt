@@ -12,7 +12,7 @@ google-auth-httplib2
 google-auth-oauthlib
 PyPDF2
 openpyxl
-msal 
+msal
 requests
 pdfplumber
 python-pptx
