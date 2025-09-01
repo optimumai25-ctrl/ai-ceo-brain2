@@ -1,4 +1,5 @@
 # embed_and_store.py
+import os
 import time
 import pickle
 from pathlib import Path
@@ -13,8 +14,20 @@ from chunk_utils import simple_chunks
 import streamlit as st
 import openai
 
-# -------- Secrets / Keys --------
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# -------- Secret helpers (lazy, fault-tolerant) --------
+def _get_secret(name: str, default: str = "") -> str:
+    try:
+        # st.secrets may not exist during certain import flows
+        return (st.secrets.get(name) if hasattr(st, "secrets") else None) or os.getenv(name, default)
+    except Exception:
+        return os.getenv(name, default)
+
+def _ensure_openai_key():
+    if not getattr(openai, "api_key", None):
+        key = _get_secret("OPENAI_API_KEY")
+        if not key:
+            raise KeyError("OPENAI_API_KEY is not set in Streamlit Secrets or environment.")
+        openai.api_key = key
 
 # -------- Paths & Config --------
 PARSED_DIR = Path("parsed_data")
@@ -35,12 +48,11 @@ next_id = 0
 
 def _normalize(vec: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(vec)
-    if n == 0:
-        return vec
-    return vec / n
+    return vec if n == 0 else vec / n
 
 # -------- Embedding --------
 def get_embedding(text: str) -> Optional[np.ndarray]:
+    _ensure_openai_key()
     for attempt in range(4):
         try:
             response = openai.Embedding.create(model=EMBED_MODEL, input=text)
@@ -72,15 +84,12 @@ def main():
 
     print(f"Found {len(files)} files to embed (chunking enabled).")
     for fp in tqdm(files, desc="Embedding"):
-        text = fp.read_text(encoding="utf-8").strip()
+        text = fp.read_text(encoding="utf-8", errors="ignore").strip()
         if not text:
             print(f"Skipping empty: {fp.name}")
             continue
 
-        chunks = simple_chunks(text, max_chars=3500, overlap=300)
-        if not chunks:
-            chunks = [{"chunk_id": 0, "text": text[:3500]}]
-
+        chunks = simple_chunks(text, max_chars=3500, overlap=300) or [{"chunk_id": 0, "text": text[:3500]}]
         for ch in chunks:
             vec = get_embedding(ch["text"])
             if vec is None:
@@ -91,7 +100,7 @@ def main():
                 "filename": fp.name,
                 "path": str(fp),
                 "chunk_id": ch["chunk_id"],
-                "text_preview": ch["text"][:1000]
+                "text_preview": ch["text"][:1000],
             }
             next_id += 1
 
