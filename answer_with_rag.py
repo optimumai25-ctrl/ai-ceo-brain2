@@ -1,4 +1,3 @@
-# answer_with_rag.py
 from pathlib import Path
 from typing import List, Tuple
 import pickle
@@ -13,9 +12,15 @@ import streamlit as st
 # -------- Secret helpers --------
 def _get_secret(name: str, default: str = "") -> str:
     try:
-        return (st.secrets.get(name) if hasattr(st, "secrets") else None) or os.getenv(name, default)
+        val = (st.secrets.get(name) if hasattr(st, "secrets") else None) or \
+              (st.secrets.get(name.lower()) if hasattr(st, "secrets") else None)  # type: ignore[attr-defined]
     except Exception:
-        return os.getenv(name, default)
+        val = None
+    if not val:
+        val = os.getenv(name) or os.getenv(name.lower(), default)
+    if isinstance(val, str):
+        val = val.strip().strip('"').strip("'")
+    return val or default
 
 def _ensure_openai_key():
     if not getattr(openai, "api_key", None):
@@ -32,6 +37,7 @@ PARSED_DIR = Path("parsed_data")
 # Constants
 EMBED_MODEL = "text-embedding-3-small"
 EMBED_DIM = 1536
+# Adaptive cosine/IP thresholds on normalized vectors
 ADAPTIVE_THRESHOLDS = [0.30, 0.22, 0.15, 0.10, 0.06]
 
 def _normalize(vec: np.ndarray) -> np.ndarray:
@@ -66,8 +72,7 @@ def _search(index, query_vec: np.ndarray, k: int):
     return index.search(query_vec, eff_k)
 
 def _split_paragraphs(txt: str) -> List[str]:
-    paras = [p.strip() for p in re.split(r"\n{2,}", txt) if p.strip()]
-    return paras
+    return [p.strip() for p in re.split(r"\n{2,}", txt) if p.strip()]
 
 def _keyword_fuzzy_score(paragraph: str, tokens: List[str]) -> float:
     p = paragraph.lower()
@@ -114,6 +119,7 @@ def _keyword_sweep(question: str, max_paras: int = 12) -> List[str]:
     return dedup
 
 def answer(question: str, k: int = 7, chat_history: List[dict] = [], strict_mode: bool = False) -> str:
+    # 1) Vector search
     idx_mtime, meta_mtime = _file_mtimes()
     index, metadata = _load_index_and_meta(idx_mtime, meta_mtime)
 
@@ -136,10 +142,12 @@ def answer(question: str, k: int = 7, chat_history: List[dict] = [], strict_mode
             chosen.sort(key=lambda x: x[1], reverse=True)
             vector_context_chunks = [metadata[i].get("text_preview", "") for i, _ in chosen]
 
+    # 2) Keyword sweep fallback
     keyword_context_chunks: List[str] = []
     if not vector_context_chunks and not strict_mode:
         keyword_context_chunks = _keyword_sweep(question, max_paras=12)
 
+    # 3) Prompt
     if vector_context_chunks or keyword_context_chunks:
         context_text = "\n\n".join(vector_context_chunks + keyword_context_chunks)
         prompt = f"""
