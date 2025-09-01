@@ -8,15 +8,11 @@ import pandas as pd
 
 import file_parser
 import embed_and_store
-from answer_with_rag import answer  # uses cached loader keyed on file mtimes
+from answer_with_rag import answer  # uses adaptive + keyword + fallback
 from onedrive_reader import sync_onedrive_folder
 
-# Must be the first Streamlit call
 st.set_page_config(page_title="AI CEO Assistant", page_icon="🧠", layout="wide")
 
-# ────────────────────────────────────────
-# Login System
-# ────────────────────────────────────────
 USERNAME = "admin123"
 PASSWORD = "BestOrg123@#"
 
@@ -40,9 +36,6 @@ if not st.session_state["authenticated"]:
     login()
     st.stop()
 
-# ────────────────────────────────────────
-# Constants & Setup
-# ────────────────────────────────────────
 HIST_PATH = Path("chat_history.json")
 REFRESH_PATH = Path("last_refresh.txt")
 UPLOAD_DIR = Path("docs")
@@ -50,9 +43,6 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 EMBED_INDEX = Path("embeddings/faiss.index")
 EMBED_META = Path("embeddings/metadata.pkl")
 
-# ────────────────────────────────────────
-# Helper Functions
-# ────────────────────────────────────────
 def load_history():
     return json.loads(HIST_PATH.read_text(encoding="utf-8")) if HIST_PATH.exists() else []
 
@@ -75,20 +65,17 @@ def export_history_to_csv(history: list) -> bytes:
 def embeddings_exist() -> bool:
     return EMBED_INDEX.exists() and EMBED_META.exists()
 
-# ────────────────────────────────────────
-# Sidebar Navigation
-# ────────────────────────────────────────
 st.sidebar.title("AI CEO Panel")
 st.sidebar.markdown(f"Logged in as: `{USERNAME}`")
 if st.sidebar.button("Logout"):
     st.session_state["authenticated"] = False
     st.rerun()
 
+# NEW: strict vs fallback toggle (default OFF => always answer)
+strict_mode = st.sidebar.checkbox("Strict answers only (no fallback)", value=False)
+
 mode = st.sidebar.radio("Navigation", ["💬 New Chat", "📜 View History", "🔁 Refresh Data"])
 
-# ────────────────────────────────────────
-# Mode: Refresh Data (Single Button Flow)
-# ────────────────────────────────────────
 if mode == "🔁 Refresh Data":
     st.title("Refresh AI Knowledge Base")
     st.caption("Sync files, parse documents, and rebuild embeddings.")
@@ -110,9 +97,7 @@ if mode == "🔁 Refresh Data":
                 embed_and_store.main()
             st.success("Step 3/3 complete: Embeddings built.")
 
-            # Clear all cached resources so the new FAISS index is reloaded on next query
             st.cache_resource.clear()
-
             save_refresh_time()
             st.balloons()
             st.info(f"Full refresh completed. **Last Refreshed:** {load_refresh_time()}")
@@ -125,9 +110,6 @@ if mode == "🔁 Refresh Data":
     else:
         st.warning("Embeddings not found. Click the button above to run the full refresh.")
 
-# ────────────────────────────────────────
-# Mode: View History
-# ────────────────────────────────────────
 elif mode == "📜 View History":
     st.title("Chat History")
     history = load_history()
@@ -153,9 +135,6 @@ elif mode == "📜 View History":
             reset_chat()
             st.success("History cleared.")
 
-# ────────────────────────────────────────
-# Mode: New Chat
-# ────────────────────────────────────────
 elif mode == "💬 New Chat":
     st.title("AI CEO Assistant")
     st.caption("Ask about meetings, projects, hiring, finances, and research. Answers cite your documents.")
@@ -177,7 +156,8 @@ elif mode == "💬 New Chat":
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
                 try:
-                    reply = answer(user_msg, k=7, chat_history=history)
+                    # Pass strict_mode through
+                    reply = answer(user_msg, k=7, chat_history=history, strict_mode=strict_mode)
                 except Exception as e:
                     reply = f"Error: {e}"
             st.markdown(f"**[{datetime.now().strftime('%b-%d-%Y %I:%M%p')}]**  \n{reply}")
