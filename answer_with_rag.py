@@ -18,14 +18,12 @@ METADATA_PATH = Path("embeddings/metadata.pkl")
 # Constants
 EMBED_MODEL = "text-embedding-3-small"
 EMBED_DIM = 1536
-SIMILARITY_THRESHOLD = 0.70  # Distance threshold for relevance filtering
+SIMILARITY_THRESHOLD = 0.70
 
-# Load index + metadata
+# Load index and metadata
 index = faiss.read_index(str(EMBEDDING_PATH))
 with open(METADATA_PATH, "rb") as f:
     metadata = pickle.load(f)
-
-    return index, metadata
 
 def get_embedding(text: str) -> np.ndarray:
     response = openai.Embedding.create(
@@ -45,19 +43,11 @@ def answer(question: str, k: int = 5, chat_history: List[dict] = []) -> str:
         if i in metadata and dist < SIMILARITY_THRESHOLD
     ]
 
-    # Format context — remove source tags here
     context_text = "\n\n".join(
         f"{item['text_preview']}"
         for item in top_k
     )
 
-    # Format chat history if needed
-    history_text = "\n".join(
-        f"{h['role'].capitalize()}: {h['content']}"
-        for h in chat_history if h['role'] in ("user", "assistant")
-    )
-
-    # Final prompt
     prompt = f"""
 You are an executive assistant AI that answers based strictly on company documents.
 Do not guess or hallucinate. If the answer isn't in the documents, say "Not found in documents."
@@ -79,4 +69,5 @@ Do not guess or hallucinate. If the answer isn't in the documents, say "Not foun
     )
 
     return completion["choices"][0]["message"]["content"]
+
 
