@@ -1,5 +1,4 @@
 # file_parser.py
-
 import os
 from pathlib import Path
 from docx import Document
@@ -10,17 +9,17 @@ from tqdm import tqdm
 DOCUMENTS_PATH = "downloaded_files"
 PARSED_PATH = "parsed_data"
 
-os.makedirs(PARSED_PATH, exist_ok=True)
+Path(PARSED_PATH).mkdir(parents=True, exist_ok=True)
 
-def parse_docx(path):
+def parse_docx(path: Path) -> str:
     doc = Document(path)
     return "\n".join([para.text for para in doc.paragraphs])
 
-def parse_pdf(path):
+def parse_pdf(path: Path) -> str:
     doc = fitz.open(path)
     return "\n".join([page.get_text() for page in doc])
 
-def parse_xlsx(path):
+def parse_xlsx(path: Path) -> str:
     text = []
     xl = pd.ExcelFile(path)
     for sheet in xl.sheet_names:
@@ -28,8 +27,8 @@ def parse_xlsx(path):
         text.append(f"### Sheet: {sheet} ###\n{df.to_string(index=False)}")
     return "\n\n".join(text)
 
-def save_text(text, out_path):
-    Path(out_path).write_text(text, encoding="utf-8")
+def save_text(text: str, out_path: Path) -> None:
+    out_path.write_text(text, encoding="utf-8")
 
 def process_file(file_path: Path):
     ext = file_path.suffix.lower()
@@ -47,20 +46,24 @@ def process_file(file_path: Path):
         return None
 
 def main():
-    print(f"📁 Scanning folder: {DOCUMENTS_PATH}")
-    for root, _, files in os.walk(DOCUMENTS_PATH):
-        for file in files:
-            full_path = Path(root) / file
-            rel_path = full_path.relative_to(DOCUMENTS_PATH)
-            print(f"📄 Processing: {rel_path}")
+    root = Path(DOCUMENTS_PATH)
+    if not root.exists():
+        print(f"📁 '{root}' not found. Create it or run OneDrive sync.")
+        return
+
+    print(f"📁 Scanning folder: {root.resolve()}")
+    for full_path in tqdm(list(root.rglob("*")), desc="Parsing"):
+        if full_path.is_file() and full_path.suffix.lower() in {".pdf", ".docx", ".xlsx"}:
+            rel = full_path.relative_to(root)
+            print(f"📄 Processing: {rel}")
             text = process_file(full_path)
             if text:
-                out_path = Path(PARSED_PATH) / f"{rel_path.stem}.txt"
-                os.makedirs(out_path.parent, exist_ok=True)
+                out_path = Path(PARSED_PATH) / f"{rel.stem}.txt"
+                out_path.parent.mkdir(parents=True, exist_ok=True)
                 save_text(text, out_path)
                 print(f"✅ Saved to {out_path}")
             else:
-                print(f"⚠️ Skipped: {rel_path}")
+                print(f"⚠️ Skipped: {rel}")
 
 if __name__ == "__main__":
     main()
